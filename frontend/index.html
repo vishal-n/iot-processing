@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IoT Telemetry Live Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    #30363d;
+      --text:      #c9d1d9;
+      --muted:     #8b949e;
+      --accent:    #58a6ff;
+      --green:     #3fb950;
+      --red:       #f85149;
+      --yellow:    #d29922;
+      --radius:    10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    #ws-status {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+    }
+
+    #ws-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+    #ws-dot.connected   { background: var(--green); }
+    #ws-dot.connecting  { background: var(--yellow); animation: pulse 1s infinite; }
+    #ws-dot.error       { background: var(--red); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      max-width: 900px;
+    }
+
+    @media (max-width: 600px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    .card-full { grid-column: 1 / -1; }
+
+    .card h2 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .metric-value {
+      font-size: 2.2rem;
+      font-weight: 700;
+      line-height: 1;
+      color: #fff;
+    }
+
+    .metric-unit {
+      font-size: 1rem;
+      color: var(--muted);
+      margin-left: 4px;
+    }
+
+    .device-id {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .status-pill {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 8px;
+    }
+    .status-online  { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+    .status-offline { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+    .status-idle    { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
+    .status-error   { background: rgba(248, 81, 73, 0.2); color: var(--red); }
+    .status-maintenance { background: rgba(210, 153, 34, 0.15); color: var(--yellow); }
+
+    .timestamp {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    /* Alerts */
+    #alert-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
+    #alert-list li {
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .alert-critical { background: rgba(248, 81, 73, 0.1); border-left: 3px solid var(--red); }
+    .alert-warning  { background: rgba(210, 153, 34, 0.1); border-left: 3px solid var(--yellow); }
+    .alert-info     { background: rgba(88, 166, 255, 0.1); border-left: 3px solid var(--accent); }
+
+    .alert-type {
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .alert-device {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    #no-data {
+      color: var(--muted);
+      font-size: 0.9rem;
+      text-align: center;
+      padding: 40px;
+      grid-column: 1 / -1;
+    }
+
+    #event-count {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* Post telemetry form */
+    .test-form {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .test-form input, .test-form select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 6px 10px;
+      font-size: 0.82rem;
+      flex: 1;
+      min-width: 90px;
+    }
+
+    .test-form button {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 16px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .test-form button:hover { opacity: 0.85; }
+
+    #post-result {
+      margin-top: 8px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2">
+    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+  </svg>
+  <h1>IoT Telemetry Live Dashboard</h1>
+  <div id="ws-status">
+    <div id="ws-dot" class="connecting"></div>
+    <span id="ws-label">Connecting…</span>
+  </div>
+</header>
+
+<div id="no-data">Waiting for telemetry events…</div>
+
+<div class="grid" id="dashboard" style="display:none;">
+
+  <!-- Device + status -->
+  <div class="card">
+    <h2>Device</h2>
+    <div class="device-id" id="device-id">—</div>
+    <div id="status-pill" class="status-pill">unknown</div>
+    <div class="timestamp" id="ts">—</div>
+    <div id="event-count">Events received: 0</div>
+  </div>
+
+  <!-- Temperature -->
+  <div class="card">
+    <h2>Temperature</h2>
+    <div class="metric-value" id="temperature">—<span class="metric-unit">°C</span></div>
+  </div>
+
+  <!-- Energy -->
+  <div class="card">
+    <h2>Energy Consumption</h2>
+    <div class="metric-value" id="energy">—<span class="metric-unit">kWh</span></div>
+  </div>
+
+  <!-- Voltage -->
+  <div class="card">
+    <h2>Voltage</h2>
+    <div class="metric-value" id="voltage">—<span class="metric-unit">V</span></div>
+  </div>
+
+  <!-- Current -->
+  <div class="card">
+    <h2>Current</h2>
+    <div class="metric-value" id="current">—<span class="metric-unit">A</span></div>
+  </div>
+
+  <!-- Alerts -->
+  <div class="card card-full">
+    <h2>Recent Alerts</h2>
+    <ul id="alert-list">
+      <li style="color:var(--muted);font-size:0.85rem;">No alerts yet.</li>
+    </ul>
+  </div>
+
+  <!-- Test sender -->
+  <div class="card card-full">
+    <h2>Send Test Telemetry</h2>
+    <div class="test-form">
+      <input id="f-device" type="text" value="AC-1001" placeholder="Device ID" />
+      <input id="f-temp"   type="number" value="29.5" placeholder="Temp °C" step="0.1" />
+      <input id="f-energy" type="number" value="4.8"  placeholder="Energy kWh" step="0.1" />
+      <input id="f-volt"   type="number" value="230"  placeholder="Voltage V" />
+      <input id="f-curr"   type="number" value="6.2"  placeholder="Current A" step="0.1" />
+      <select id="f-status">
+        <option value="online">online</option>
+        <option value="offline">offline</option>
+        <option value="idle">idle</option>
+        <option value="error">error</option>
+        <option value="maintenance">maintenance</option>
+      </select>
+      <button onclick="sendTelemetry()">Send</button>
+    </div>
+    <div id="post-result"></div>
+  </div>
+
+</div>
+
+<script>
+  const WS_URL   = 'ws://localhost:8000/ws/telemetry';
+  const API_URL  = 'http://localhost:8000';
+  let eventCount = 0;
+  let ws;
+
+  // ---- WebSocket ----
+  function connect() {
+    setStatus('connecting', 'Connecting…');
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = () => setStatus('connected', 'Connected');
+
+    ws.onmessage = (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'telemetry') {
+        renderTelemetry(msg.data, msg.alerts || []);
+      }
+    };
+
+    ws.onclose = () => {
+      setStatus('error', 'Disconnected — retrying…');
+      setTimeout(connect, 3000);
+    };
+
+    ws.onerror = () => {
+      setStatus('error', 'Connection error');
+    };
+  }
+
+  function setStatus(cls, label) {
+    const dot  = document.getElementById('ws-dot');
+    const text = document.getElementById('ws-label');
+    dot.className = cls;
+    text.textContent = label;
+  }
+
+  // ---- Render ----
+  function renderTelemetry(d, alerts) {
+    document.getElementById('no-data').style.display  = 'none';
+    document.getElementById('dashboard').style.display = 'grid';
+
+    eventCount++;
+    document.getElementById('event-count').textContent = `Events received: ${eventCount}`;
+    document.getElementById('device-id').textContent   = d.deviceId;
+    document.getElementById('temperature').innerHTML   = `${d.temperature}<span class="metric-unit">°C</span>`;
+    document.getElementById('energy').innerHTML        = `${d.energyConsumption}<span class="metric-unit">kWh</span>`;
+    document.getElementById('voltage').innerHTML       = `${d.voltage}<span class="metric-unit">V</span>`;
+    document.getElementById('current').innerHTML       = `${d.current}<span class="metric-unit">A</span>`;
+
+    const pill = document.getElementById('status-pill');
+    pill.textContent = d.status;
+    pill.className   = `status-pill status-${d.status}`;
+
+    const ts = new Date(d.timestamp);
+    document.getElementById('ts').textContent = `Last seen: ${ts.toLocaleString()}`;
+
+    if (alerts.length > 0) {
+      const list = document.getElementById('alert-list');
+      alerts.forEach(a => {
+        const li = document.createElement('li');
+        li.className = `alert-${a.severity}`;
+        li.innerHTML = `
+          <div>
+            <div class="alert-type">${a.alert_type}</div>
+            <div class="alert-device">${a.device_id}</div>
+          </div>
+          <div>${a.message}</div>`;
+        list.prepend(li);
+        // Keep max 20 alerts
+        while (list.children.length > 20) list.removeChild(list.lastChild);
+      });
+    }
+  }
+
+  // ---- Test sender ----
+  async function sendTelemetry() {
+    const result = document.getElementById('post-result');
+    const now = new Date().toISOString();
+    const body = {
+      deviceId:          document.getElementById('f-device').value,
+      timestamp:         now,
+      temperature:       parseFloat(document.getElementById('f-temp').value),
+      energyConsumption: parseFloat(document.getElementById('f-energy').value),
+      voltage:           parseFloat(document.getElementById('f-volt').value),
+      current:           parseFloat(document.getElementById('f-curr').value),
+      status:            document.getElementById('f-status').value,
+    };
+
+    result.textContent = 'Sending…';
+    try {
+      const res = await fetch(`${API_URL}/telemetry`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      });
+      const data = await res.json();
+      result.textContent = res.ok
+        ? `✓ Stored (id=${data.telemetry_id}, alerts=${data.alerts_triggered.length})`
+        : `✗ ${JSON.stringify(data.detail)}`;
+    } catch (e) {
+      result.textContent = `✗ ${e.message}`;
+    }
+  }
+
+  connect();
+</script>
+</body>
+</html>
