@@ -3,11 +3,13 @@ Database layer using SQLite (aiosqlite) for local dev.
 In production, swap for PostgreSQL with asyncpg.
 """
 import logging
+import os
 from pathlib import Path
 
 import aiosqlite
 
-DB_PATH = Path(__file__).parent / "telemetry.db"
+_default_db = Path(__file__).parent / "telemetry.db"
+DB_PATH = Path(os.getenv("DB_PATH", str(_default_db)))
 logger = logging.getLogger(__name__)
 
 

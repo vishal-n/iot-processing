@@ -304,8 +304,13 @@
 </div>
 
 <script>
-  const WS_URL   = 'ws://localhost:8000/ws/telemetry';
-  const API_URL  = 'http://localhost:8000';
+  // Works both when opened directly (file://) and served via Docker/nginx
+  const isFile   = location.protocol === 'file:';
+  const wsProto  = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const WS_URL   = isFile
+    ? 'ws://localhost:8000/ws/telemetry'
+    : `${wsProto}//${location.host}/ws/telemetry`;
+  const API_URL  = isFile ? 'http://localhost:8000' : '';
   let eventCount = 0;
   let ws;
 
